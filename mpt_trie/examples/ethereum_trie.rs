@@ -10,8 +10,9 @@
 
 use std::ops::RangeInclusive;
 
-use ethereum_types::{H160, H256, U256};
-use keccak_hash::keccak;
+use alloy::primitives::{keccak256, Address, B256, U256};
+use alloy::rpc::types::serde_helpers::quantity::vec;
+use alloy_rlp::{Encodable, RlpEncodable};
 use mpt_trie::partial_trie::PartialTrie;
 use mpt_trie::trie_ops::TrieOpResult;
 use mpt_trie::utils::TryFromIterator;
@@ -20,22 +21,21 @@ use mpt_trie::{
     partial_trie::{HashedPartialTrie, StandardTrie},
 };
 use rand::{rngs::StdRng, Rng, SeedableRng};
-use rlp::Encodable;
-use rlp_derive::RlpEncodable;
+//use rlp::Encodable;
 
 const RANGE_OF_STORAGE_ENTRIES_AN_ACCOUNT_CAN_HAVE: RangeInclusive<usize> = 0..=10;
 const NUM_ACCOUNTS_TO_GEN: usize = 100;
 
-type HashedAccountAddr = H256;
-type AccountAddr = H160;
+type HashedAccountAddr = B256;
+type AccountAddr = Address;
 
 /// Eth test account entry. As a separate struct to allow easy RLP encoding.
 #[derive(Debug, RlpEncodable)]
 struct StateTrieEntry {
     nonce: U256,
     balance: U256,
-    storage_root: H256,
-    code_hash: H256,
+    storage_root: B256,
+    code_hash: B256,
 }
 
 fn main() -> TrieOpResult<()> {
@@ -47,11 +47,11 @@ fn main() -> TrieOpResult<()> {
         .into_iter()
         .unzip();
 
-    let _state_trie = StandardTrie::try_from_iter(
-        account_entries
-            .into_iter()
-            .map(|(k, acc)| (Nibbles::from_h256_be(k), acc.rlp_bytes().to_vec())),
-    )?;
+    let _state_trie = StandardTrie::try_from_iter(account_entries.into_iter().map(|(k, acc)| {
+        let mut rlp_bytes = vec![];
+        acc.encode(&mut rlp_bytes);
+        (Nibbles::from_h256_be(k), rlp_bytes)
+    }))?;
 
     let _account_storage_tries: Vec<(AccountAddr, HashedPartialTrie)> = account_storage_tries;
 
@@ -66,8 +66,8 @@ fn generate_fake_account_and_storage_trie(
     (HashedAccountAddr, StateTrieEntry),
     (AccountAddr, HashedPartialTrie),
 )> {
-    let account_addr: H160 = rng.gen();
-    let hashed_account_addr = keccak(account_addr.as_bytes());
+    let account_addr: Address = Address::random();
+    let hashed_account_addr = keccak256(account_addr);
 
     let account_storage_trie = generate_fake_account_storage_trie(rng)?;
 
@@ -75,8 +75,8 @@ fn generate_fake_account_and_storage_trie(
         nonce: gen_u256(rng),
         balance: gen_u256(rng),
         storage_root: account_storage_trie.hash(),
-        code_hash: rng.gen(), /* For the test, the contract code does not exist, so we can just
-                               * "fake" it here. */
+        code_hash: B256::random(), /* For the test, the contract code does not exist, so we can
+                                    * just "fake" it here. */
     };
 
     Ok((
@@ -89,13 +89,14 @@ fn generate_fake_account_storage_trie(rng: &mut StdRng) -> TrieOpResult<HashedPa
     let num_storage_entries = rng.gen_range(RANGE_OF_STORAGE_ENTRIES_AN_ACCOUNT_CAN_HAVE);
 
     HashedPartialTrie::try_from_iter((0..num_storage_entries).map(|_| {
-        let hashed_storage_addr = Nibbles::from_h256_be(rng.gen::<HashedAccountAddr>());
-        let storage_data = gen_u256(rng).rlp_bytes().to_vec();
+        let hashed_storage_addr = Nibbles::from_h256_le(B256::random());
+        let mut storage_data = vec![0u8; 32];
+        gen_u256(rng).encode(&mut storage_data);
 
         (hashed_storage_addr, storage_data)
     }))
 }
 
 fn gen_u256(rng: &mut StdRng) -> U256 {
-    U256(rng.gen::<[u64; 4]>())
+    U256::from_limbs(rng.gen::<[u64; 4]>())
 }

@@ -12,9 +12,10 @@ homepage.workspace = true
 exclude = ["test_data/*"]
 
 [dependencies]
+alloy.workspace = true
+alloy-rlp.workspace = true
 bytes.workspace = true
 enum-as-inner.workspace = true
-ethereum-types.workspace = true
 hex.workspace = true
 impl-codec.workspace = true
 impl-num-traits.workspace = true

@@ -3,8 +3,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use ethereum_types::H256;
-use keccak_hash::keccak;
+use alloy::primitives::{keccak256, B256};
 use rlp::{Prototype, Rlp};
 use zk_evm_common::EMPTY_TRIE_HASH;
 
@@ -16,14 +15,14 @@ use super::{
 #[derive(Clone, Debug)]
 /// A builder for constructing a partial trie from a collection of nodes.
 pub struct PartialTrieBuilder<T> {
-    root: H256,
-    nodes: HashMap<H256, Vec<u8>>,
+    root: B256,
+    nodes: HashMap<B256, Vec<u8>>,
     _marker: std::marker::PhantomData<T>,
 }
 
 impl<T: PartialTrie> PartialTrieBuilder<T> {
     /// Creates a new `PartialTrieBuilder` with the given root and nodes.
-    pub const fn new(root: H256, nodes: HashMap<H256, Vec<u8>>) -> Self {
+    pub const fn new(root: B256, nodes: HashMap<B256, Vec<u8>>) -> Self {
         PartialTrieBuilder {
             root,
             nodes,
@@ -37,7 +36,7 @@ impl<T: PartialTrie> PartialTrieBuilder<T> {
     /// partial trie.
     pub fn insert_proof(&mut self, proof: Vec<Vec<u8>>) {
         for node in proof {
-            self.nodes.insert(keccak(&node), node.to_vec());
+            self.nodes.insert(keccak256(&node), node.to_vec());
         }
     }
 
@@ -79,23 +78,23 @@ impl<T: PartialTrie> PartialTrieBuilder<T> {
                 nibbles.to_hex_prefix_encoding(is_leaf).to_vec(),
                 bytes[1].clone(),
             ]);
-            self.nodes.entry(keccak(&node)).or_insert(node.to_vec());
+            self.nodes.entry(keccak256(&node)).or_insert(node.to_vec());
         }
     }
 }
 
 /// Constructs a partial trie from a root hash and a collection of nodes.
-fn construct_partial_trie<T: PartialTrie>(hash: H256, nodes: &HashMap<H256, Vec<u8>>) -> T {
+fn construct_partial_trie<T: PartialTrie>(hash: B256, nodes: &HashMap<B256, Vec<u8>>) -> T {
     let bytes = match nodes.get(&hash) {
         Some(value) => rlp::decode_list::<Vec<u8>>(value),
-        None if [H256::zero(), EMPTY_TRIE_HASH].contains(&hash) => return T::default(),
+        None if [B256::ZERO, EMPTY_TRIE_HASH].contains(&hash) => return T::default(),
         None => return T::new(Node::Hash(hash)),
     };
 
     decode_node(bytes, nodes)
 }
 
-fn decode_node<T: PartialTrie>(bytes: Vec<Vec<u8>>, nodes: &HashMap<H256, Vec<u8>>) -> T {
+fn decode_node<T: PartialTrie>(bytes: Vec<Vec<u8>>, nodes: &HashMap<B256, Vec<u8>>) -> T {
     let node = match bytes.len() {
         17 => parse_branch_node(bytes, nodes),
         2 if is_extension_node(&bytes) => parse_extension_node(bytes, nodes),
@@ -119,7 +118,7 @@ fn is_leaf_node(bytes: &[Vec<u8>]) -> bool {
 /// Parses a branch node from the given bytes.
 fn parse_branch_node<T: PartialTrie>(
     bytes: Vec<Vec<u8>>,
-    nodes: &HashMap<H256, Vec<u8>>,
+    nodes: &HashMap<B256, Vec<u8>>,
 ) -> Node<T> {
     let children = (0..16)
         .map(|i| {
@@ -140,7 +139,7 @@ fn parse_branch_node<T: PartialTrie>(
 /// Parses an extension node from the given bytes.
 fn parse_extension_node<T: PartialTrie>(
     bytes: Vec<Vec<u8>>,
-    nodes: &HashMap<H256, Vec<u8>>,
+    nodes: &HashMap<B256, Vec<u8>>,
 ) -> Node<T> {
     let mut encoded_path = Nibbles::from_bytes_be(&bytes[0][..]).unwrap();
 
@@ -169,9 +168,10 @@ fn parse_leaf_node<T: PartialTrie>(bytes: Vec<Vec<u8>>) -> Node<T> {
 }
 
 /// Parses a child node from the given bytes.
-fn parse_child_node<T: PartialTrie>(bytes: &[u8], nodes: &HashMap<H256, Vec<u8>>) -> T {
+fn parse_child_node<T: PartialTrie>(bytes: &[u8], nodes: &HashMap<B256, Vec<u8>>) -> T {
     match bytes.len() {
+        // TODO(@sergerad): Replace rlp with alloy_rlp here.
         x if x < 32 => decode_node(rlp::decode_list::<Vec<u8>>(bytes), nodes),
-        _ => construct_partial_trie(H256::from_slice(bytes), nodes),
+        _ => construct_partial_trie(B256::from_slice(bytes), nodes),
     }
 }

@@ -1,6 +1,5 @@
+use alloy::primitives::{keccak256, B256};
 use bytes::Bytes;
-use ethereum_types::H256;
-use keccak_hash::keccak;
 use rlp::RlpStream;
 
 use crate::{
@@ -17,7 +16,7 @@ pub enum EncodedNode {
     Hashed([u8; 32]),
 }
 
-impl From<&EncodedNode> for H256 {
+impl From<&EncodedNode> for B256 {
     fn from(v: &EncodedNode) -> Self {
         match v {
             EncodedNode::Raw(b) => bytes_to_h256(&hash_bytes(b)),
@@ -28,7 +27,7 @@ impl From<&EncodedNode> for H256 {
 
 /// Calculates the hash of a node.
 /// Assumes that all leaf values are already rlp encoded.
-pub(crate) fn hash_trie<N: PartialTrie + TrieNodeIntern>(node: &Node<N>) -> H256 {
+pub(crate) fn hash_trie<N: PartialTrie + TrieNodeIntern>(node: &Node<N>) -> B256 {
     let trie_hash_bytes = rlp_encode_and_hash_node(node);
     (&trie_hash_bytes).into()
 }
@@ -90,18 +89,18 @@ fn append_to_stream(s: &mut RlpStream, node: EncodedNode) {
 }
 
 fn hash_bytes(bytes: &Bytes) -> [u8; 32] {
-    keccak(bytes).0
+    keccak256(bytes).0
 }
 
 #[cfg(test)]
 mod tests {
     use std::{fs, iter::once, str::FromStr, sync::Arc};
 
+    use alloy::primitives::{Address, B256, U256};
+    use alloy_rlp::RlpEncodable;
     use bytes::Bytes;
     use eth_trie::{EthTrie, MemoryDB, Trie};
-    use ethereum_types::{H160, H256, U256};
     use rlp::Encodable;
-    use rlp_derive::RlpEncodable;
     use serde::Deserialize;
 
     use crate::{
@@ -133,9 +132,8 @@ mod tests {
 
     impl Encodable for U256Rlpable {
         fn rlp_append(&self, s: &mut rlp::RlpStream) {
-            let mut buf = [0; 32];
             let leading_empty_bytes = self.0.leading_zeros() as usize / 8;
-            self.0.to_big_endian(&mut buf);
+            let buf: [u8; 32] = self.0.to_be_bytes();
 
             s.encoder().encode_value(&buf[leading_empty_bytes..]);
         }
@@ -146,8 +144,8 @@ mod tests {
     struct AccountEntry {
         nonce: u64,
         balance: U256,
-        storage_root: H256,
-        code_hash: H256,
+        storage_root: B256,
+        code_hash: B256,
     }
 
     /// Raw deserialized JSON parsed from the PyEVM output.
@@ -164,14 +162,14 @@ mod tests {
     impl From<PyEvmTrueValEntryRaw> for PyEvmTrueValEntry {
         fn from(r: PyEvmTrueValEntryRaw) -> Self {
             PyEvmTrueValEntry {
-                account_key: H256(hash_bytes(&Bytes::copy_from_slice(
-                    H160::from_str(&r.address).unwrap().as_bytes(),
+                account_key: B256::new(hash_bytes(&Bytes::copy_from_slice(
+                    Address::from_str(&r.address).unwrap().as_slice(),
                 ))),
                 balance: U256::from_str(&r.balance).unwrap(),
                 nonce: r.nonce,
-                code_hash: H256::from_str(&r.code_hash).unwrap(),
-                storage_root: H256::from_str(&r.storage_root).unwrap(),
-                final_state_root: H256::from_str(&r.final_state_root).unwrap(),
+                code_hash: B256::from_str(&r.code_hash).unwrap(),
+                storage_root: B256::from_str(&r.storage_root).unwrap(),
+                final_state_root: B256::from_str(&r.final_state_root).unwrap(),
             }
         }
     }
@@ -179,12 +177,12 @@ mod tests {
     /// Parsed PyEVM output in a format that the tests can use.
     #[derive(Clone, Debug)]
     struct PyEvmTrueValEntry {
-        account_key: H256,
+        account_key: B256,
         balance: U256,
         nonce: u64,
-        code_hash: H256,
-        storage_root: H256,
-        final_state_root: H256,
+        code_hash: B256,
+        storage_root: B256,
+        final_state_root: B256,
     }
 
     impl PyEvmTrueValEntry {
@@ -215,23 +213,20 @@ mod tests {
     /// library as a ground truth.
     fn get_lib_trie_root_hashes_after_each_insert(
         entries: impl Iterator<Item = TestInsertValEntry>,
-    ) -> impl Iterator<Item = H256> {
+    ) -> impl Iterator<Item = B256> {
         let mut truth_trie = create_truth_trie();
 
         entries.map(move |(k, v)| {
             truth_trie.insert(&k.bytes_be(), &v).unwrap();
             let h = truth_trie.root_hash().unwrap();
 
-            // Kind of silly... Both of these types are identical except that one is
-            // re-exported. Cargo is generating crate version mismatch errors. Not sure how
-            // else to solve...
-            ethereum_types::H256(h.0)
+            B256::new(h.0)
         })
     }
 
     fn get_root_hashes_for_our_trie_after_each_insert(
         entries: impl Iterator<Item = TestInsertValEntry>,
-    ) -> impl Iterator<Item = H256> {
+    ) -> impl Iterator<Item = B256> {
         let mut trie = HashedPartialTrie::new(Node::Empty);
 
         entries.map(move |(k, v)| {
@@ -256,7 +251,10 @@ mod tests {
         common_setup();
 
         let trie = HashedPartialTrie::new(Node::Empty);
-        assert_eq!(keccak_hash::KECCAK_NULL_RLP, trie.get_hash());
+        assert_eq!(
+            keccak_hash::KECCAK_NULL_RLP.as_bytes(),
+            trie.get_hash().as_slice(),
+        );
     }
 
     #[test]
@@ -265,7 +263,7 @@ mod tests {
 
         let acc_and_hash_entry = &load_pyevm_truth_vals()[0];
         let acc_entry = acc_and_hash_entry.account_entry();
-        let rlp_bytes = rlp::encode(&acc_entry);
+        let rlp_bytes = alloy_rlp::encode(&acc_entry);
 
         let ins_entry = (
             Nibbles::from_h256_be(acc_and_hash_entry.account_key),
@@ -342,7 +340,7 @@ mod tests {
             .map(|e| {
                 (
                     Nibbles::from_h256_be(e.account_key),
-                    rlp::encode(&e.account_entry()).into(),
+                    alloy_rlp::encode(&e.account_entry()).into(),
                 )
             })
             .collect();
@@ -384,7 +382,7 @@ mod tests {
             our_trie.delete(k)?;
             truth_trie.remove(&k.bytes_be())?;
 
-            let truth_root_hash = H256(truth_trie.root_hash()?.0);
+            let truth_root_hash = B256::new(truth_trie.root_hash()?.0);
             assert_eq!(our_trie.get_hash(), truth_root_hash);
         }
 

@@ -7,7 +7,7 @@ use std::{
     sync::Arc,
 };
 
-use ethereum_types::H256;
+use alloy::primitives::B256;
 use num_traits::PrimInt;
 
 use crate::{
@@ -75,8 +75,8 @@ pub(crate) fn create_mask_of_1s(amt: usize) -> NibblesIntern {
     (NibblesIntern::one() << amt) - 1
 }
 
-pub(crate) fn bytes_to_h256(b: &[u8; 32]) -> H256 {
-    keccak_hash::H256::from_slice(b)
+pub(crate) fn bytes_to_h256(b: &[u8; 32]) -> B256 {
+    B256::from(b)
 }
 
 /// Minimal key information of "segments" (nodes) used to construct trie

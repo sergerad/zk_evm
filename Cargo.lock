@@ -216,6 +216,7 @@ dependencies = [
  "cfg-if",
  "const-hex",
  "derive_more",
+ "getrandom",
  "hex-literal",
  "itoa",
  "k256",
@@ -3119,10 +3120,11 @@ dependencies = [
 name = "mpt_trie"
 version = "0.4.1"
 dependencies = [
+ "alloy",
+ "alloy-rlp",
  "bytes",
  "enum-as-inner",
  "eth_trie",
- "ethereum-types",
  "hex",
  "impl-codec",
  "impl-num-traits",
@@ -5991,6 +5993,7 @@ dependencies = [
 name = "zk_evm_common"
 version = "0.1.0"
 dependencies = [
+ "alloy",
  "bytes",
  "ethereum-types",
  "keccak-hash 0.10.0",

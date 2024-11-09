@@ -9,6 +9,7 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
+alloy.workspace = true
 ethereum-types.workspace = true
 
 [dev-dependencies]

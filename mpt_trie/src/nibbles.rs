@@ -13,8 +13,8 @@ use std::{
     str::FromStr,
 };
 
+use alloy::primitives::{B256, U128, U256};
 use bytes::{Bytes, BytesMut};
-use ethereum_types::{H256, U128, U256};
 use impl_codec::impl_uint_codec;
 use impl_num_traits::impl_uint_num_traits;
 use impl_rlp::impl_uint_rlp;
@@ -126,13 +126,13 @@ impl_as_u64s_for_primitive!(u64);
 
 impl AsU64s for U128 {
     fn as_u64s(&self) -> impl Iterator<Item = u64> + '_ {
-        self.0.iter().copied()
+        self.as_limbs().iter().copied()
     }
 }
 
 impl AsU64s for U256 {
     fn as_u64s(&self) -> impl Iterator<Item = u64> + '_ {
-        self.0.iter().copied()
+        self.as_limbs().iter().copied()
     }
 }
 
@@ -198,7 +198,7 @@ impl<'a> TryFrom<&'a Nibbles> for U256 {
         }
 
         let ret = [arr[0], arr[1], arr[2], arr[3]];
-        Ok(U256(ret))
+        Ok(U256::from_limbs(ret))
     }
 }
 
@@ -211,7 +211,7 @@ impl<'a> TryFrom<&'a NibblesIntern> for U256 {
         }
 
         let ret = [value.0[0], value.0[1], value.0[2], value.0[3]];
-        Ok(U256(ret))
+        Ok(U256::from_limbs(ret))
     }
 }
 
@@ -225,11 +225,11 @@ impl TryInto<U256> for Nibbles {
         }
 
         let ret = [arr.0[0], arr.0[1], arr.0[2], arr.0[3]];
-        Ok(U256(ret))
+        Ok(U256::from_limbs(ret))
     }
 }
 
-impl From<Nibbles> for H256 {
+impl From<Nibbles> for B256 {
     fn from(val: Nibbles) -> Self {
         let mut nib_bytes = val.bytes_be();
         if nib_bytes.len() < 32 {
@@ -238,7 +238,7 @@ impl From<Nibbles> for H256 {
             }
         }
 
-        H256::from_slice(&nib_bytes)
+        B256::from_slice(&nib_bytes)
     }
 }
 
@@ -259,7 +259,7 @@ impl From<U256> for NibblesIntern {
 /// [`PartialTrie`][`crate::partial_trie::PartialTrie`].
 ///
 /// Generally, if you're constructing keys from actual trie data, you probably
-/// will be working with `U256`s and `H256`s both of which `Nibbles` has a
+/// will be working with `U256`s and `B256`s both of which `Nibbles` has a
 /// `From` implementation for.
 ///
 /// It's important to note that leading `0` bits are part of a key. For example:
@@ -912,17 +912,17 @@ impl Nibbles {
         byte_buf[40 - self.min_bytes()..40].to_vec()
     }
 
-    /// Creates `Nibbles` from a big endian `H256`.
-    pub fn from_h256_be(v: H256) -> Self {
-        Self::from_h256_common(|v| NibblesIntern::from_big_endian(v.as_bytes()), v)
+    /// Creates `Nibbles` from a big endian `B256`.
+    pub fn from_h256_be(v: B256) -> Self {
+        Self::from_h256_common(|v| NibblesIntern::from_big_endian(v.as_slice()), v)
     }
 
-    /// Creates `Nibbles` from a little endian `H256`.
-    pub fn from_h256_le(v: H256) -> Self {
-        Self::from_h256_common(|v| NibblesIntern::from_little_endian(v.as_bytes()), v)
+    /// Creates `Nibbles` from a little endian `B256`.
+    pub fn from_h256_le(v: B256) -> Self {
+        Self::from_h256_common(|v| NibblesIntern::from_little_endian(v.as_slice()), v)
     }
 
-    fn from_h256_common<F: Fn(H256) -> NibblesIntern>(conv_f: F, v: H256) -> Self {
+    fn from_h256_common<F: Fn(B256) -> NibblesIntern>(conv_f: F, v: B256) -> Self {
         Self {
             count: 64,
             packed: conv_f(v),
@@ -968,7 +968,7 @@ impl Nibbles {
 mod tests {
     use std::str::FromStr;
 
-    use ethereum_types::{H256, U256};
+    use alloy::primitives::{B256, U256};
 
     use super::{Nibble, Nibbles, StrToNibblesError, ToNibbles};
     use crate::nibbles::FromHexPrefixError;
@@ -1584,21 +1584,33 @@ mod tests {
     #[test]
     fn nibbles_from_h256_works() {
         assert_eq!(
-            format!("{:x}", Nibbles::from_h256_be(H256::from_low_u64_be(0))),
+            format!(
+                "{:x}",
+                Nibbles::from_h256_be(U256::from(0).to_be_bytes().into())
+            ),
             ZERO_NIBS_64,
         );
         assert_eq!(
-            format!("{:x}", Nibbles::from_h256_be(H256::from_low_u64_be(2048))),
+            format!(
+                "{:x}",
+                Nibbles::from_h256_be(U256::from(2048).to_be_bytes().into())
+            ),
             "0x0000000000000000000000000000000000000000000000000000000000000800"
         );
         assert_eq!(
-            format!("{:x}", Nibbles::from_h256_le(H256::from_low_u64_be(0))),
+            format!(
+                "{:x}",
+                Nibbles::from_h256_le(U256::from(0).to_be_bytes().into())
+            ),
             ZERO_NIBS_64
         );
 
         // Note that the first bit of the `Nibbles` changes if the count is odd.
         assert_eq!(
-            format!("{:x}", Nibbles::from_h256_le(H256::from_low_u64_be(2048))),
+            format!(
+                "{:x}",
+                Nibbles::from_h256_le(U256::from(2048).to_be_bytes().into())
+            ),
             "0x0008000000000000000000000000000000000000000000000000000000000000"
         );
     }
@@ -1606,11 +1618,11 @@ mod tests {
     #[test]
     fn nibbles_into_h256_works() {
         let nibbles: Nibbles = Nibbles::from(0x0);
-        let h256_value: H256 = nibbles.into();
+        let h256_value: B256 = nibbles.into();
         assert_eq!(format!("0x{:x}", h256_value), ZERO_NIBS_64);
 
         let nibbles: Nibbles = Nibbles::from(2048);
-        let h256_value: H256 = nibbles.into();
+        let h256_value: B256 = nibbles.into();
         assert_eq!(
             format!("0x{:x}", h256_value),
             "0x0000000000000000000000000000000000000000000000000000000000000800",
@@ -1664,12 +1676,12 @@ mod tests {
 
     #[test]
     fn from_hex_prefix_encoding_edge_case() {
-        let v = U256::from_str("3ab76c381c0f8ea617ea96780ffd1e165c754b28a41a95922f9f70682c581353")
-            .unwrap();
-        let mut buf = [0; 32];
-        v.to_big_endian(&mut buf);
-
-        Nibbles::from_hex_prefix_encoding(&buf).unwrap();
+        let v = U256::from_str_radix(
+            "3ab76c381c0f8ea617ea96780ffd1e165c754b28a41a95922f9f70682c581353",
+            16,
+        )
+        .unwrap();
+        Nibbles::from_hex_prefix_encoding(&v.to_be_bytes::<32>()).unwrap();
     }
 
     #[test]

@@ -1,3 +1,4 @@
+use alloy::primitives::B256;
 use ethereum_types::{H256, U256};
 
 /// The hash value of an account empty EVM code.
@@ -9,7 +10,7 @@ pub const EMPTY_CODE_HASH: H256 = H256([
 
 /// The hash of an empty Merkle Patricia trie.
 /// 0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421
-pub const EMPTY_TRIE_HASH: H256 = H256([
+pub const EMPTY_TRIE_HASH: B256 = B256::new([
     86, 232, 31, 23, 27, 204, 85, 166, 255, 131, 69, 230, 146, 192, 248, 110, 91, 72, 224, 27, 153,
     108, 173, 192, 1, 98, 47, 181, 227, 99, 180, 33,
 ]);
@@ -62,6 +63,6 @@ fn test_empty_code_hash() {
 fn test_empty_trie_hash() {
     assert_eq!(
         EMPTY_TRIE_HASH,
-        keccak_hash::keccak(bytes::Bytes::from_static(&rlp::NULL_RLP))
+        keccak_hash::keccak(bytes::Bytes::from_static(&rlp::NULL_RLP)).as_bytes()
     );
 }
